@@ -99,4 +99,25 @@ class FlywayMigrationIntegrationTest {
         UUID vendorId = UUID.fromString("11111111-1111-1111-1111-111111111111");
         assertThat(invoiceRepository.findByVendorIdAndInvoiceNumber(vendorId, "INV-VND01-2026-10")).isPresent();
     }
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
+
+    @Test
+    @DisplayName("Should verify V4 migration and persist AuditLog entity")
+    void testV4AuditLogsMigration() {
+        var log = com.moveinsync.settlement.entity.AuditLog.builder()
+                .id(UUID.randomUUID())
+                .action("SCHEMA_VERIFY")
+                .entityType("SYSTEM")
+                .entityId("MIGRATION_V4")
+                .performedBy("TEST_RUNNER")
+                .performedRole("ADMIN")
+                .detailsJson("{\"status\":\"ok\"}")
+                .createdAt(java.time.Instant.now())
+                .build();
+
+        auditLogRepository.save(log);
+        assertThat(auditLogRepository.findById(log.getId())).isPresent();
+    }
 }

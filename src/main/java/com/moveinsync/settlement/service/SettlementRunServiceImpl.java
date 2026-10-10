@@ -39,6 +39,7 @@ public class SettlementRunServiceImpl implements SettlementRunService {
     private final TripRepository tripRepository;
     private final ViolationRepository violationRepository;
     private final SettlementCalculationEngine calculationEngine;
+    private final AuditService auditService;
 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -254,6 +255,21 @@ public class SettlementRunServiceImpl implements SettlementRunService {
         log.info("Settlement run {} completed successfully: {} drivers settled, net payout = ₹{}",
                 savedRun.getId(), settlements.size(), savedRun.getTotalNetPayout());
 
+        auditService.recordEvent(
+                "SETTLEMENT_RUN_INITIATED",
+                "SETTLEMENT_RUN",
+                savedRun.getId().toString(),
+                createdBy,
+                "ROLE_ADMIN",
+                Map.of(
+                        "vendorId", savedRun.getVendor().getId().toString(),
+                        "businessUnitId", savedRun.getBusinessUnit().getId().toString(),
+                        "billingPeriod", savedRun.getBillingPeriod(),
+                        "totalNetPayout", savedRun.getTotalNetPayout(),
+                        "driversSettled", settlements.size()
+                )
+        );
+
         return mapToResponse(savedRun, false);
     }
 
@@ -291,6 +307,20 @@ public class SettlementRunServiceImpl implements SettlementRunService {
 
         SettlementRun approvedRun = settlementRunRepository.save(run);
         log.info("Settlement run {} approved by {}", id, approvedBy);
+
+        auditService.recordEvent(
+                "SETTLEMENT_RUN_APPROVED",
+                "SETTLEMENT_RUN",
+                approvedRun.getId().toString(),
+                approvedBy,
+                "ROLE_APPROVER",
+                Map.of(
+                        "billingPeriod", approvedRun.getBillingPeriod(),
+                        "totalNetPayout", approvedRun.getTotalNetPayout(),
+                        "status", approvedRun.getStatus().name()
+                )
+        );
+
         return mapToResponse(approvedRun, false);
     }
 

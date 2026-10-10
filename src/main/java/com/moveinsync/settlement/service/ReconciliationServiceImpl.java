@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,6 +42,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private final SettlementRunRepository settlementRunRepository;
     private final VendorRepository vendorRepository;
     private final BusinessUnitRepository businessUnitRepository;
+    private final AuditService auditService;
 
     @Override
     @Transactional
@@ -77,6 +79,21 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         VendorInvoice saved = vendorInvoiceRepository.save(invoice);
         log.info("Invoice {} registered successfully for vendor {}", saved.getInvoiceNumber(), vendor.getVendorCode());
+
+        auditService.recordEvent(
+                "VENDOR_INVOICE_SUBMITTED",
+                "VENDOR_INVOICE",
+                saved.getId().toString(),
+                "SYSTEM",
+                "ROLE_ADMIN",
+                Map.of(
+                        "invoiceNumber", saved.getInvoiceNumber(),
+                        "vendorId", saved.getVendor().getId().toString(),
+                        "claimedAmount", saved.getClaimedAmount(),
+                        "billingPeriod", saved.getBillingPeriod()
+                )
+        );
+
         return mapToInvoiceResponse(saved);
     }
 
@@ -189,6 +206,20 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
         log.info("Reconciliation {} completed: status={}, variance=₹{}",
                 savedRecon.getId(), status, varianceAmount);
+
+        auditService.recordEvent(
+                "RECONCILIATION_PERFORMED",
+                "RECONCILIATION",
+                savedRecon.getId().toString(),
+                reconciledBy,
+                "ROLE_APPROVER",
+                Map.of(
+                        "settlementRunId", run.getId().toString(),
+                        "vendorInvoiceId", invoice.getId().toString(),
+                        "status", status.name(),
+                        "varianceAmount", varianceAmount
+                )
+        );
 
         return mapToReconciliationResponse(savedRecon);
     }

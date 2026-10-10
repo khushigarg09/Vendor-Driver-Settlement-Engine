@@ -24,7 +24,7 @@ public class DriverPayslipController {
     private final SettlementRunService settlementRunService;
 
     @GetMapping("/{driverId}/payslips/{billingPeriod}")
-    @PreAuthorize("hasAnyRole('EMPLOYEE', 'APPROVER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'APPROVER') or (hasRole('EMPLOYEE') and @settlementSecurity.canAccessDriver(authentication, #driverId))")
     @Operation(summary = "Get Driver Payslip",
                description = "Retrieves itemized driver payslip containing signed lines, tax deductions, and net payout with zero-drift reconciliation check.")
     @ApiResponses({

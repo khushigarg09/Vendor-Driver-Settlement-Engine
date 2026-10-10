@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,6 +33,7 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
     private final SettlementRepository settlementRepository;
     private final TripRepository tripRepository;
     private final ViolationRepository violationRepository;
+    private final AuditService auditService;
 
     @Override
     @Transactional
@@ -90,6 +92,20 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
 
         Dispute saved = disputeRepository.save(dispute);
         log.info("Dispute {} successfully registered in OPEN state", saved.getId());
+
+        auditService.recordEvent(
+                "DISPUTE_FILED",
+                "DISPUTE",
+                saved.getId().toString(),
+                filedBy,
+                "ROLE_EMPLOYEE",
+                Map.of(
+                        "settlementId", settlement.getId().toString(),
+                        "reason", request.getReason(),
+                        "claimedDelta", request.getClaimedDelta()
+                )
+        );
+
         return mapToDisputeResponse(saved);
     }
 
@@ -157,6 +173,19 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
 
         log.info("Dispute {} approved with Adjustment {} of ₹{}", dispute.getId(), savedAdj.getId(), delta);
 
+        auditService.recordEvent(
+                "DISPUTE_APPROVED",
+                "DISPUTE",
+                dispute.getId().toString(),
+                approvedBy,
+                "ROLE_APPROVER",
+                Map.of(
+                        "settlementId", dispute.getSettlement().getId().toString(),
+                        "adjustmentId", savedAdj.getId().toString(),
+                        "approvedDelta", delta
+                )
+        );
+
         return DisputeResolutionResponse.builder()
                 .disputeId(dispute.getId())
                 .status(DisputeStatus.APPROVED)
@@ -195,6 +224,19 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
         }
 
         log.info("Dispute {} rejected by {}", dispute.getId(), rejectedBy);
+
+        auditService.recordEvent(
+                "DISPUTE_REJECTED",
+                "DISPUTE",
+                saved.getId().toString(),
+                rejectedBy,
+                "ROLE_APPROVER",
+                Map.of(
+                        "settlementId", dispute.getSettlement().getId().toString(),
+                        "notes", notes
+                )
+        );
+
         return mapToDisputeResponse(saved);
     }
 

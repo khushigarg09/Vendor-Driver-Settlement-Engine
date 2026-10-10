@@ -47,3 +47,8 @@ settlement:
   tds:
     monthly-threshold-rupees: 30000.00
     tax-rate-percentage: 5.00
+  security:
+    admin-password: ${SETTLEMENT_SECURITY_ADMIN_PASSWORD:admin123}
+    approver-password: ${SETTLEMENT_SECURITY_APPROVER_PASSWORD:approver123}
+    employee-password: ${SETTLEMENT_SECURITY_EMPLOYEE_PASSWORD:employee123}
+    driver2-password: ${SETTLEMENT_SECURITY_DRIVER2_PASSWORD:driver123}
