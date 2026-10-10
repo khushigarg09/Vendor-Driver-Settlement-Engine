@@ -50,6 +50,12 @@ class SettlementRunServiceIntegrationTest {
     private com.moveinsync.settlement.repository.VendorInvoiceRepository vendorInvoiceRepository;
 
     @Autowired
+    private com.moveinsync.settlement.repository.AdjustmentRepository adjustmentRepository;
+
+    @Autowired
+    private com.moveinsync.settlement.repository.DisputeRepository disputeRepository;
+
+    @Autowired
     private TripRepository tripRepository;
 
     private static final UUID VENDOR_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
@@ -59,6 +65,8 @@ class SettlementRunServiceIntegrationTest {
 
     @BeforeAll
     void initCleanState() {
+        adjustmentRepository.deleteAll();
+        disputeRepository.deleteAll();
         reconciliationRepository.deleteAll();
         vendorInvoiceRepository.deleteAll();
         settlementLineRepository.deleteAll();

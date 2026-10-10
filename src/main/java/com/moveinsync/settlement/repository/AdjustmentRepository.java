@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface AdjustmentRepository extends JpaRepository<Adjustment, UUID> {
     List<Adjustment> findByDisputeId(UUID disputeId);
     List<Adjustment> findBySettlementId(UUID settlementId);
+    List<Adjustment> findAllByOrderByCreatedAtDesc();
 }

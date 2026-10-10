@@ -220,15 +220,15 @@ class ReconciliationServiceIntegrationTest {
     @Order(6)
     @DisplayName("Reconciliation Idempotency: Re-reconciling same run and invoice returns existing record")
     void testReconcileIdempotency() {
-        SettlementRun run = createTestRun(new BigDecimal("30000.00"), "2026-05", vendor);
+        SettlementRun run = createTestRun(new BigDecimal("30000.00"), "2025-05", vendor);
 
         VendorInvoiceResponse invoice = reconciliationService.submitInvoice(VendorInvoiceRequest.builder()
                 .vendorId(VENDOR_ID)
                 .businessUnitId(BU_ID)
                 .invoiceNumber("INV-IDEMP-001")
-                .billingPeriod("2026-05")
+                .billingPeriod("2025-05")
                 .claimedAmount(new BigDecimal("30000.00"))
-                .invoiceDate(LocalDate.of(2026, 5, 31))
+                .invoiceDate(LocalDate.of(2025, 5, 31))
                 .build());
 
         ReconciliationRequest reconReq = ReconciliationRequest.builder()
@@ -250,15 +250,15 @@ class ReconciliationServiceIntegrationTest {
     @Order(7)
     @DisplayName("Reconciliation Scope Mismatch: Throws exception when billing period does not match")
     void testReconcileBillingPeriodMismatch() {
-        SettlementRun run = createTestRun(new BigDecimal("10000.00"), "2026-06", vendor);
+        SettlementRun run = createTestRun(new BigDecimal("10000.00"), "2025-06", vendor);
 
         VendorInvoiceResponse invoice = reconciliationService.submitInvoice(VendorInvoiceRequest.builder()
                 .vendorId(VENDOR_ID)
                 .businessUnitId(BU_ID)
                 .invoiceNumber("INV-MISMATCH-001")
-                .billingPeriod("2026-07")
+                .billingPeriod("2025-07")
                 .claimedAmount(new BigDecimal("10000.00"))
-                .invoiceDate(LocalDate.of(2026, 7, 31))
+                .invoiceDate(LocalDate.of(2025, 7, 31))
                 .build());
 
         ReconciliationRequest reconReq = ReconciliationRequest.builder()
