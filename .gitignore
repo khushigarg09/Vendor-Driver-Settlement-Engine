@@ -1,0 +1,49 @@
+# Git ignore for MoveInSync Settlement Engine
+
+# Build & packaging
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Environment & credentials
+.env
+.env.local
+*.env
+*.pem
+*.key
+credentials.json
+secrets/
+
+# IDE & Editor files
+.idea/
+*.iml
+.vscode/
+*.swp
+*~
+.settings/
+.project
+.classpath
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Docker / local data
+docker-data/
+postgres-data/
+
+# Local planning, implementation records, and interview preparation (Keep Local Only)
+implementation-record/
+interview/
+docs/
+ANTIGRAVITY_MASTER_PROMPT.md
+MASTER_IMPLEMENTATION_PLAN.md
+IMPLEMENTATION_PLAN.md
+*.pdf
