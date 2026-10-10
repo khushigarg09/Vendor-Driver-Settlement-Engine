@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface VendorInvoiceRepository extends JpaRepository<VendorInvoice, UUID> {
     Optional<VendorInvoice> findByVendorIdAndInvoiceNumber(UUID vendorId, String invoiceNumber);
     List<VendorInvoice> findByVendorIdAndBillingPeriod(UUID vendorId, String billingPeriod);
+    List<VendorInvoice> findAllByOrderByCreatedAtDesc();
 }
