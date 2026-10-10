@@ -56,7 +56,7 @@ class SchemaConstraintsIntegrationTest {
                 .id(UUID.randomUUID())
                 .vendor(vendor)
                 .businessUnit(bu)
-                .billingPeriod("2026-10")
+                .billingPeriod("2026-09")
                 .status(SettlementRunStatus.FINALIZED)
                 .createdBy("system")
                 .totalGross(BigDecimal.ZERO)
@@ -68,7 +68,7 @@ class SchemaConstraintsIntegrationTest {
                 .id(UUID.randomUUID())
                 .vendor(vendor)
                 .businessUnit(bu)
-                .billingPeriod("2026-10") // Duplicate scope!
+                .billingPeriod("2026-09") // Duplicate scope!
                 .status(SettlementRunStatus.STARTED)
                 .createdBy("system")
                 .totalGross(BigDecimal.ZERO)
