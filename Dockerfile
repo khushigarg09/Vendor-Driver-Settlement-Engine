@@ -40,7 +40,7 @@ RUN addgroup -g 1001 -S settlement && \
 WORKDIR /app
 
 # Copy executable jar from builder stage
-COPY --from=builder --chown=settlement:settlement /build/target/settlement-engine-*.jar /app/app.jar
+COPY --from=builder --chown=settlement:settlement /build/target/settlement-engine.jar /app/app.jar
 
 # Switch to non-root user
 USER settlement:settlement

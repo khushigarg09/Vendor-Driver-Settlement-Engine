@@ -31,7 +31,7 @@ jobs:
         run: mvn clean compile -B
 
       - name: Execute Automated Test Suite (113 Tests)
-        run: mvn test -B
+        run: mvn test -B -Dsurefire.useFile=false
 
       - name: Package Production JAR
         run: mvn package -DskipTests -B
@@ -40,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: settlement-engine-jar
-          path: target/settlement-engine-*.jar
+          path: target/settlement-engine.jar
           retention-days: 7
 
   docker-build-check:

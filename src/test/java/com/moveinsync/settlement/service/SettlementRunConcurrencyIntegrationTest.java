@@ -28,13 +28,41 @@ class SettlementRunConcurrencyIntegrationTest {
     @Autowired
     private SettlementRunRepository settlementRunRepository;
 
+    @Autowired
+    private com.moveinsync.settlement.repository.TripRepository tripRepository;
+
+    @Autowired
+    private com.moveinsync.settlement.repository.DriverRepository driverRepository;
+
+    @Autowired
+    private com.moveinsync.settlement.repository.VendorRepository vendorRepository;
+
+    @Autowired
+    private com.moveinsync.settlement.repository.BusinessUnitRepository businessUnitRepository;
+
     private static final UUID VENDOR_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID BU_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final String BILLING_PERIOD = "2026-10";
+    private static final String BILLING_PERIOD = "2026-11";
 
     @Test
     @DisplayName("Concurrent threads executing the same settlement run scope produce exactly 1 database record")
     void testConcurrentSettlementRuns() throws InterruptedException, ExecutionException {
+        // Seed 1 eligible trip in 2026-11 for this isolated test
+        tripRepository.save(com.moveinsync.settlement.entity.Trip.builder()
+                .id(UUID.randomUUID())
+                .sourceTripId("CONC-TRIP-" + UUID.randomUUID())
+                .driver(driverRepository.findById(UUID.fromString("44444444-4444-4444-4444-444444444441")).orElseThrow())
+                .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
+                .businessUnit(businessUnitRepository.findById(BU_ID).orElseThrow())
+                .vehicleCategory("SEDAN")
+                .startedAt(java.time.Instant.parse("2026-11-10T08:00:00Z"))
+                .completedAt(java.time.Instant.parse("2026-11-10T09:00:00Z"))
+                .status(com.moveinsync.settlement.entity.enums.TripStatus.COMPLETED)
+                .settlementStatus(com.moveinsync.settlement.entity.enums.TripSettlementStatus.PENDING)
+                .delayMinutes(0)
+                .createdAt(java.time.Instant.now())
+                .build());
+
         int threadCount = 4;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch startLatch = new CountDownLatch(1);
