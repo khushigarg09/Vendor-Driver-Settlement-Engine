@@ -1,0 +1,70 @@
+services:
+  # ----------------------------------------------------------------------------
+  # PostgreSQL Database Service
+  # ----------------------------------------------------------------------------
+  settlement-db:
+    image: postgres:16-alpine
+    container_name: settlement-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-settlement_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_secure_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-settlement_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - settlement-network
+
+  # ----------------------------------------------------------------------------
+  # Settlement Engine Application Service
+  # ----------------------------------------------------------------------------
+  settlement-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: settlement-engine-api
+    restart: unless-stopped
+    depends_on:
+      settlement-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: settlement-db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-settlement_db}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres_secure_password}
+      SETTLEMENT_TIMEZONE: Asia/Kolkata
+      SETTLEMENT_SECURITY_ADMIN_PASSWORD: ${SETTLEMENT_SECURITY_ADMIN_PASSWORD:-admin123}
+      SETTLEMENT_SECURITY_APPROVER_PASSWORD: ${SETTLEMENT_SECURITY_APPROVER_PASSWORD:-approver123}
+      SETTLEMENT_SECURITY_EMPLOYEE_PASSWORD: ${SETTLEMENT_SECURITY_EMPLOYEE_PASSWORD:-employee123}
+      SETTLEMENT_SECURITY_DRIVER2_PASSWORD: ${SETTLEMENT_SECURITY_DRIVER2_PASSWORD:-driver123}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - settlement-network
+
+# ------------------------------------------------------------------------------
+# Persistent Storage & Network Definitions
+# ------------------------------------------------------------------------------
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  settlement-network:
+    driver: bridge

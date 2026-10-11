@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+*.env
+target/
+*.log
+logs/
+implementation-record/
+interview/
+docs/
+.idea/
+.vscode/
+*.md
+*.pdf
+docker-data/
+postgres-data/
