@@ -43,6 +43,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private final VendorRepository vendorRepository;
     private final BusinessUnitRepository businessUnitRepository;
     private final AuditService auditService;
+    private final SettlementMetricsService metricsService;
 
     @Override
     @Transactional
@@ -108,13 +109,23 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     @Override
     @Transactional(readOnly = true)
     public List<VendorInvoiceResponse> listInvoices(UUID vendorId, String billingPeriod) {
-        List<VendorInvoice> list;
+        return listInvoices(vendorId, billingPeriod, 0, 50);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<VendorInvoiceResponse> listInvoices(UUID vendorId, String billingPeriod, int page, int size) {
+        int boundedPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(boundedPage, boundedSize);
+
+        org.springframework.data.domain.Page<VendorInvoice> invoicePage;
         if (vendorId != null && billingPeriod != null) {
-            list = vendorInvoiceRepository.findByVendorIdAndBillingPeriod(vendorId, billingPeriod);
+            invoicePage = vendorInvoiceRepository.findByVendorIdAndBillingPeriod(vendorId, billingPeriod, pageable);
         } else {
-            list = vendorInvoiceRepository.findAllByOrderByCreatedAtDesc();
+            invoicePage = vendorInvoiceRepository.findAllByOrderByCreatedAtDesc(pageable);
         }
-        return list.stream().map(this::mapToInvoiceResponse).toList();
+        return invoicePage.stream().map(this::mapToInvoiceResponse).toList();
     }
 
     @Override
@@ -219,6 +230,11 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                         "status", status.name(),
                         "varianceAmount", varianceAmount
                 )
+        );
+
+        metricsService.recordReconciliation(
+                status.name(),
+                varianceAmount != null ? varianceAmount.doubleValue() : 0.0
         );
 
         return mapToReconciliationResponse(savedRecon);

@@ -1,6 +1,8 @@
 package com.moveinsync.settlement.repository;
 
 import com.moveinsync.settlement.entity.VendorInvoice;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -12,5 +14,7 @@ import java.util.UUID;
 public interface VendorInvoiceRepository extends JpaRepository<VendorInvoice, UUID> {
     Optional<VendorInvoice> findByVendorIdAndInvoiceNumber(UUID vendorId, String invoiceNumber);
     List<VendorInvoice> findByVendorIdAndBillingPeriod(UUID vendorId, String billingPeriod);
+    Page<VendorInvoice> findByVendorIdAndBillingPeriod(UUID vendorId, String billingPeriod, Pageable pageable);
     List<VendorInvoice> findAllByOrderByCreatedAtDesc();
+    Page<VendorInvoice> findAllByOrderByCreatedAtDesc(Pageable pageable);
 }

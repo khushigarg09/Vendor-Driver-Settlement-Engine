@@ -34,6 +34,7 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
     private final TripRepository tripRepository;
     private final ViolationRepository violationRepository;
     private final AuditService auditService;
+    private final SettlementMetricsService metricsService;
 
     @Override
     @Transactional
@@ -104,6 +105,12 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
                         "reason", request.getReason(),
                         "claimedDelta", request.getClaimedDelta()
                 )
+        );
+
+        metricsService.recordDispute(
+                "FILED",
+                "OPEN",
+                request.getClaimedDelta() != null ? request.getClaimedDelta().doubleValue() : 0.0
         );
 
         return mapToDisputeResponse(saved);
@@ -186,6 +193,8 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
                 )
         );
 
+        metricsService.recordDispute("RESOLVED", "APPROVED", delta.doubleValue());
+
         return DisputeResolutionResponse.builder()
                 .disputeId(dispute.getId())
                 .status(DisputeStatus.APPROVED)
@@ -237,6 +246,8 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
                 )
         );
 
+        metricsService.recordDispute("RESOLVED", "REJECTED", 0.0);
+
         return mapToDisputeResponse(saved);
     }
 
@@ -251,10 +262,23 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
     @Override
     @Transactional(readOnly = true)
     public List<DisputeResponse> listDisputes(UUID settlementId) {
-        List<Dispute> disputes = (settlementId != null)
-                ? disputeRepository.findBySettlementId(settlementId)
-                : disputeRepository.findAllByOrderByCreatedAtDesc();
-        return disputes.stream().map(this::mapToDisputeResponse).toList();
+        return listDisputes(settlementId, 0, 50);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<DisputeResponse> listDisputes(UUID settlementId, int page, int size) {
+        int boundedPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(boundedPage, boundedSize);
+
+        org.springframework.data.domain.Page<Dispute> disputePage;
+        if (settlementId != null) {
+            disputePage = disputeRepository.findBySettlementId(settlementId, pageable);
+        } else {
+            disputePage = disputeRepository.findAllByOrderByCreatedAtDesc(pageable);
+        }
+        return disputePage.stream().map(this::mapToDisputeResponse).toList();
     }
 
     @Override

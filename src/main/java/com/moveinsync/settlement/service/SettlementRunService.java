@@ -25,6 +25,11 @@ public interface SettlementRunService {
     List<SettlementRunResponse> listSettlementRuns();
 
     /**
+     * Lists recorded settlement runs with pagination ordered by creation date descending.
+     */
+    List<SettlementRunResponse> listSettlementRuns(int page, int size);
+
+    /**
      * Approves and finalizes a settlement run and its constituent driver settlements.
      */
     SettlementRunResponse approveSettlementRun(UUID id, String approvedBy);

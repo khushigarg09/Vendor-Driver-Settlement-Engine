@@ -40,12 +40,14 @@ public class SettlementRunServiceImpl implements SettlementRunService {
     private final ViolationRepository violationRepository;
     private final SettlementCalculationEngine calculationEngine;
     private final AuditService auditService;
+    private final SettlementMetricsService metricsService;
 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SettlementRunResponse executeSettlementRun(SettlementRunRequest request, String createdBy) {
         log.info("Initiating settlement run for vendor={}, businessUnit={}, period={}, requestedBy={}",
                 request.getVendorId(), request.getBusinessUnitId(), request.getBillingPeriod(), createdBy);
+        long startTime = System.currentTimeMillis();
 
         // 1. Idempotency Check: Return existing completed/finalized run if already present
         Optional<SettlementRun> existingRunOpt = settlementRunRepository
@@ -270,6 +272,13 @@ public class SettlementRunServiceImpl implements SettlementRunService {
                 )
         );
 
+        long duration = System.currentTimeMillis() - startTime;
+        metricsService.recordSettlementRun(
+                savedRun.getStatus().name(),
+                duration,
+                savedRun.getTotalNetPayout() != null ? savedRun.getTotalNetPayout().doubleValue() : 0.0
+        );
+
         return mapToResponse(savedRun, false);
     }
 
@@ -284,7 +293,16 @@ public class SettlementRunServiceImpl implements SettlementRunService {
     @Override
     @Transactional(readOnly = true)
     public List<SettlementRunResponse> listSettlementRuns() {
-        return settlementRunRepository.findAllByOrderByCreatedAtDesc().stream()
+        return listSettlementRuns(0, 50);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SettlementRunResponse> listSettlementRuns(int page, int size) {
+        int boundedPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(boundedPage, boundedSize);
+        return settlementRunRepository.findAllByOrderByCreatedAtDesc(pageable).stream()
                 .map(r -> mapToResponse(r, false))
                 .toList();
     }

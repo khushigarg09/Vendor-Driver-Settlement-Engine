@@ -99,8 +99,12 @@ public class DisputeController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('EMPLOYEE', 'ADMIN', 'APPROVER')")
-    @Operation(summary = "List Disputes", description = "Retrieves all disputes, optionally filtered by settlement ID.")
-    public ResponseEntity<List<DisputeResponse>> listDisputes(@RequestParam(required = false) UUID settlementId) {
-        return ResponseEntity.ok(disputeAdjustmentService.listDisputes(settlementId));
+    @Operation(summary = "List Disputes", description = "Retrieves all disputes, optionally filtered by settlement ID with pagination.")
+    public ResponseEntity<List<DisputeResponse>> listDisputes(
+            @RequestParam(required = false) UUID settlementId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(disputeAdjustmentService.listDisputes(settlementId, page, size));
     }
 }

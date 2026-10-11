@@ -37,6 +37,11 @@ public interface DisputeAdjustmentService {
     List<DisputeResponse> listDisputes(UUID settlementId);
 
     /**
+     * Lists disputes with pagination, optionally filtered by target settlement ID.
+     */
+    List<DisputeResponse> listDisputes(UUID settlementId, int page, int size);
+
+    /**
      * Lists adjustments, optionally filtered by target settlement ID.
      */
     List<AdjustmentResponse> listAdjustments(UUID settlementId);

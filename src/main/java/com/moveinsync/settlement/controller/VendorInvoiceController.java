@@ -42,12 +42,14 @@ public class VendorInvoiceController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'APPROVER')")
-    @Operation(summary = "List Vendor Invoices", description = "Retrieves all submitted vendor invoices optionally filtered by vendor and period.")
+    @Operation(summary = "List Vendor Invoices", description = "Retrieves all submitted vendor invoices optionally filtered by vendor and period with pagination.")
     public ResponseEntity<List<VendorInvoiceResponse>> listInvoices(
             @RequestParam(required = false) UUID vendorId,
-            @RequestParam(required = false) String billingPeriod
+            @RequestParam(required = false) String billingPeriod,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(reconciliationService.listInvoices(vendorId, billingPeriod));
+        return ResponseEntity.ok(reconciliationService.listInvoices(vendorId, billingPeriod, page, size));
     }
 
     @GetMapping("/{id}")

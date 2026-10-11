@@ -52,9 +52,12 @@ public class SettlementRunController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'APPROVER')")
-    @Operation(summary = "List Settlement Runs", description = "Returns all historical settlement runs ordered by creation date descending.")
-    public ResponseEntity<List<SettlementRunResponse>> listSettlementRuns() {
-        return ResponseEntity.ok(settlementRunService.listSettlementRuns());
+    @Operation(summary = "List Settlement Runs", description = "Returns historical settlement runs ordered by creation date descending with optional pagination.")
+    public ResponseEntity<List<SettlementRunResponse>> listSettlementRuns(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(settlementRunService.listSettlementRuns(page, size));
     }
 
     @GetMapping("/{id}")

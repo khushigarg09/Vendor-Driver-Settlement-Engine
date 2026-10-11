@@ -11,5 +11,9 @@ public interface AuditService {
 
     List<AuditLogResponse> getAllAuditLogs();
 
+    List<AuditLogResponse> getAllAuditLogs(int page, int size);
+
     List<AuditLogResponse> getAuditLogsByEntity(String entityType, String entityId);
+
+    List<AuditLogResponse> getAuditLogsByEntity(String entityType, String entityId, int page, int size);
 }

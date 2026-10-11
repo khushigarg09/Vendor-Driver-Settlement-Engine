@@ -7,6 +7,7 @@ import com.moveinsync.settlement.entity.AuditLog;
 import com.moveinsync.settlement.repository.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -64,9 +65,29 @@ public class AuditServiceImpl implements AuditService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<AuditLogResponse> getAllAuditLogs(int page, int size) {
+        int boundedPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        return auditLogRepository.findAllByOrderByCreatedAtDesc(PageRequest.of(boundedPage, boundedSize))
+                .map(AuditLogResponse::fromEntity)
+                .getContent();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<AuditLogResponse> getAuditLogsByEntity(String entityType, String entityId) {
         return auditLogRepository.findByEntityTypeAndEntityIdOrderByCreatedAtDesc(entityType, entityId).stream()
                 .map(AuditLogResponse::fromEntity)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AuditLogResponse> getAuditLogsByEntity(String entityType, String entityId, int page, int size) {
+        int boundedPage = Math.max(0, page);
+        int boundedSize = Math.min(Math.max(1, size), 100);
+        return auditLogRepository.findByEntityTypeAndEntityIdOrderByCreatedAtDesc(entityType, entityId, PageRequest.of(boundedPage, boundedSize))
+                .map(AuditLogResponse::fromEntity)
+                .getContent();
     }
 }

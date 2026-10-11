@@ -26,6 +26,11 @@ public interface ReconciliationService {
     List<VendorInvoiceResponse> listInvoices(UUID vendorId, String billingPeriod);
 
     /**
+     * Lists invoices with pagination optionally filtered by vendor ID and billing period.
+     */
+    List<VendorInvoiceResponse> listInvoices(UUID vendorId, String billingPeriod, int page, int size);
+
+    /**
      * Performs automated tolerance-based reconciliation between a settlement run and a vendor invoice.
      */
     ReconciliationResponse reconcile(ReconciliationRequest request, String reconciledBy);
