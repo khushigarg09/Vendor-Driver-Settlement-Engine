@@ -27,17 +27,14 @@ jobs:
           java-version: '21'
           cache: 'maven'
 
-      - name: Ensure Executable Maven Wrapper
-        run: chmod +x mvnw
-
       - name: Compile Application
-        run: ./mvnw clean compile -B
+        run: mvn clean compile -B
 
       - name: Execute Automated Test Suite (113 Tests)
-        run: ./mvnw test -B
+        run: mvn test -B
 
       - name: Package Production JAR
-        run: ./mvnw package -DskipTests -B
+        run: mvn package -DskipTests -B
 
       - name: Archive Built JAR Artifact
         uses: actions/upload-artifact@v4

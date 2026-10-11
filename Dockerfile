@@ -4,32 +4,30 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Stage 1: Builder
+# Stage 1: Builder (Pre-installed Maven 3.9 + Java 21 JDK)
 # ------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /build
 
-# Copy Maven wrapper and POM for layer caching
-COPY mvnw ./
-COPY .mvn .mvn
+# Copy POM
 COPY pom.xml ./
 
-# Pre-fetch dependencies (layer caching)
-RUN ./mvnw dependency:go-offline -B
+# Pre-fetch dependencies
+RUN mvn dependency:resolve -B || true
 
 # Copy application source code
 COPY src ./src
 
 # Compile and package application JAR (tests skipped during image assembly)
-RUN ./mvnw clean package -DskipTests -B
+RUN mvn clean package -DskipTests -B
 
 # ------------------------------------------------------------------------------
 # Stage 2: Hardened Non-Root Runtime
 # ------------------------------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
-# Install wget/curl for health check verification
+# Install curl and tzdata for health checks and timezone resolution
 RUN apk add --no-cache curl tzdata
 
 # Set timezone

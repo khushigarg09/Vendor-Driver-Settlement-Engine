@@ -1,0 +1,6 @@
+# Enforce LF line endings for shell scripts and wrapper
+* text=auto
+mvnw text eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
