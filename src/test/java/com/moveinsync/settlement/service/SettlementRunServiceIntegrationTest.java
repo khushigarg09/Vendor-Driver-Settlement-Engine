@@ -47,9 +47,6 @@ class SettlementRunServiceIntegrationTest {
     private com.moveinsync.settlement.repository.ReconciliationRepository reconciliationRepository;
 
     @Autowired
-    private com.moveinsync.settlement.repository.VendorInvoiceRepository vendorInvoiceRepository;
-
-    @Autowired
     private com.moveinsync.settlement.repository.AdjustmentRepository adjustmentRepository;
 
     @Autowired
@@ -68,7 +65,6 @@ class SettlementRunServiceIntegrationTest {
         adjustmentRepository.deleteAll();
         disputeRepository.deleteAll();
         reconciliationRepository.deleteAll();
-        vendorInvoiceRepository.deleteAll();
         settlementLineRepository.deleteAll();
         settlementRepository.deleteAll();
         settlementRunRepository.deleteAll();

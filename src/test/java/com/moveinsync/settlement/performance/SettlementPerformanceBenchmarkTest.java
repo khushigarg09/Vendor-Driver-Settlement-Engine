@@ -14,10 +14,12 @@ import com.moveinsync.settlement.repository.TripRepository;
 import com.moveinsync.settlement.repository.VendorRepository;
 import com.moveinsync.settlement.service.SettlementRunService;
 import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,10 +37,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Slf4j
 @SpringBootTest
 @ActiveProfiles("test")
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public class SettlementPerformanceBenchmarkTest {
 
     @Autowired
     private SettlementRunService settlementRunService;
+
+    @Autowired
+    private com.moveinsync.settlement.repository.SettlementRunRepository settlementRunRepository;
 
     @Autowired
     private TripRepository tripRepository;
@@ -56,6 +62,16 @@ public class SettlementPerformanceBenchmarkTest {
     private static final UUID BU_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final UUID DRIVER_1_ID = UUID.fromString("44444444-4444-4444-4444-444444444441");
     private static final UUID DRIVER_2_ID = UUID.fromString("44444444-4444-4444-4444-444444444442");
+
+    @AfterEach
+    void tearDown() {
+        settlementRunRepository.findAll().stream()
+                .filter(r -> "2028-05".equals(r.getBillingPeriod()))
+                .forEach(settlementRunRepository::delete);
+        tripRepository.findAll().stream()
+                .filter(t -> t.getSourceTripId() != null && t.getSourceTripId().startsWith("PERF-TRIP-2028-05-"))
+                .forEach(tripRepository::delete);
+    }
 
     @Test
     @DisplayName("Bulk settlement calculation benchmark handles 100 trips under 5 seconds")

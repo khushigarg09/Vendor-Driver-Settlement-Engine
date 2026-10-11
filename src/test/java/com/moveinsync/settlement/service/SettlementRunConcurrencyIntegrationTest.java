@@ -3,10 +3,12 @@ package com.moveinsync.settlement.service;
 import com.moveinsync.settlement.dto.SettlementRunRequest;
 import com.moveinsync.settlement.dto.SettlementRunResponse;
 import com.moveinsync.settlement.repository.SettlementRunRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.ArrayList;
@@ -18,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.BEFORE_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @DisplayName("Concurrency Integration: SettlementRun Concurrent Execution & Race-Condition Safety")
 class SettlementRunConcurrencyIntegrationTest {
 
@@ -42,12 +44,22 @@ class SettlementRunConcurrencyIntegrationTest {
 
     private static final UUID VENDOR_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID BU_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final String BILLING_PERIOD = "2026-11";
+    private static final String BILLING_PERIOD = "2029-11";
+
+    @AfterEach
+    void tearDown() {
+        settlementRunRepository.findAll().stream()
+                .filter(r -> BILLING_PERIOD.equals(r.getBillingPeriod()))
+                .forEach(settlementRunRepository::delete);
+        tripRepository.findAll().stream()
+                .filter(t -> t.getSourceTripId() != null && t.getSourceTripId().startsWith("CONC-TRIP-"))
+                .forEach(tripRepository::delete);
+    }
 
     @Test
     @DisplayName("Concurrent threads executing the same settlement run scope produce exactly 1 database record")
     void testConcurrentSettlementRuns() throws InterruptedException, ExecutionException {
-        // Seed 1 eligible trip in 2026-11 for this isolated test
+        // Seed 1 eligible trip in 2029-11 for this isolated test
         tripRepository.save(com.moveinsync.settlement.entity.Trip.builder()
                 .id(UUID.randomUUID())
                 .sourceTripId("CONC-TRIP-" + UUID.randomUUID())
@@ -55,8 +67,8 @@ class SettlementRunConcurrencyIntegrationTest {
                 .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
                 .businessUnit(businessUnitRepository.findById(BU_ID).orElseThrow())
                 .vehicleCategory("SEDAN")
-                .startedAt(java.time.Instant.parse("2026-11-10T08:00:00Z"))
-                .completedAt(java.time.Instant.parse("2026-11-10T09:00:00Z"))
+                .startedAt(java.time.Instant.parse("2029-11-10T08:00:00Z"))
+                .completedAt(java.time.Instant.parse("2029-11-10T09:00:00Z"))
                 .status(com.moveinsync.settlement.entity.enums.TripStatus.COMPLETED)
                 .settlementStatus(com.moveinsync.settlement.entity.enums.TripSettlementStatus.PENDING)
                 .delayMinutes(0)
