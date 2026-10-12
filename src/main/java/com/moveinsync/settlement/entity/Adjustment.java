@@ -38,6 +38,14 @@ public class Adjustment {
     @Column(name = "delta_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal deltaAmount;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "consumed_run_id")
+    private SettlementRun consumedRun;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "consumed_settlement_id")
+    private Settlement consumedSettlement;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)

@@ -46,17 +46,65 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Settlement not found: " + request.getSettlementId()));
 
         if (settlement.getSettlementRun() != null && settlement.getSettlementRun().getStatus() == com.moveinsync.settlement.entity.enums.SettlementRunStatus.STARTED) {
-            throw new SettlementDomainException("Cannot file dispute against a settlement whose run is in STARTED status. Settlement must be CALCULATED or FINALIZED.");
+            throw new SettlementDomainException(String.format(
+                    "Cannot file dispute against a settlement whose run is in STARTED status. Settlement must be in APPROVED or PAID status.",
+                    settlement.getId()
+            ));
         }
 
-        if (request.getDisputedTripId() == null && request.getDisputedViolationId() == null) {
+        if (settlement.getStatus() != SettlementStatus.APPROVED && settlement.getStatus() != SettlementStatus.PAID) {
+            throw new SettlementDomainException(String.format(
+                    "Cannot file dispute against unapproved settlement %s with status %s. Settlement must be in APPROVED or PAID status.",
+                    settlement.getId(), settlement.getStatus()
+            ));
+        }
+
+        boolean hasTrip = request.getDisputedTripId() != null;
+        boolean hasViolation = request.getDisputedViolationId() != null;
+
+        if (!hasTrip && !hasViolation) {
             throw new SettlementDomainException("Dispute must target either a specific trip or a violation.");
+        }
+        if (hasTrip && hasViolation) {
+            throw new SettlementDomainException("Dispute cannot target both a trip and a violation simultaneously. Specify exactly one target.");
         }
 
         Trip trip = null;
-        if (request.getDisputedTripId() != null) {
+        if (hasTrip) {
             trip = tripRepository.findById(request.getDisputedTripId())
                     .orElseThrow(() -> new ResourceNotFoundException("Disputed trip not found: " + request.getDisputedTripId()));
+
+            // Validate driver ownership
+            if (!trip.getDriver().getId().equals(settlement.getDriver().getId())) {
+                throw new SettlementDomainException(String.format(
+                        "Disputed trip %s belongs to driver %s, but settlement belongs to driver %s",
+                        trip.getId(), trip.getDriver().getId(), settlement.getDriver().getId()
+                ));
+            }
+
+            // Validate vendor ownership if run exists
+            if (settlement.getSettlementRun() != null) {
+                if (!trip.getVendor().getId().equals(settlement.getSettlementRun().getVendor().getId())) {
+                    throw new SettlementDomainException(String.format(
+                            "Disputed trip %s belongs to vendor %s, but settlement run belongs to vendor %s",
+                            trip.getId(), trip.getVendor().getId(), settlement.getSettlementRun().getVendor().getId()
+                    ));
+                }
+                if (!trip.getBusinessUnit().getId().equals(settlement.getSettlementRun().getBusinessUnit().getId())) {
+                    throw new SettlementDomainException(String.format(
+                            "Disputed trip %s belongs to business unit %s, but settlement run belongs to business unit %s",
+                            trip.getId(), trip.getBusinessUnit().getId(), settlement.getSettlementRun().getBusinessUnit().getId()
+                    ));
+                }
+            }
+
+            // Validate inclusion in this settlement
+            if (!settlementRepository.isTripIncludedInSettlement(settlement.getId(), trip.getId())) {
+                throw new SettlementDomainException(String.format(
+                        "Disputed trip %s was not included in settlement %s",
+                        trip.getId(), settlement.getId()
+                ));
+            }
 
             Optional<Dispute> existingDispute = disputeRepository
                     .findBySettlementIdAndTripIdAndStatus(settlement.getId(), trip.getId(), DisputeStatus.OPEN);
@@ -69,9 +117,25 @@ public class DisputeAdjustmentServiceImpl implements DisputeAdjustmentService {
         }
 
         Violation violation = null;
-        if (request.getDisputedViolationId() != null) {
+        if (hasViolation) {
             violation = violationRepository.findById(request.getDisputedViolationId())
                     .orElseThrow(() -> new ResourceNotFoundException("Disputed violation not found: " + request.getDisputedViolationId()));
+
+            // Validate driver ownership
+            if (!violation.getDriver().getId().equals(settlement.getDriver().getId())) {
+                throw new SettlementDomainException(String.format(
+                        "Disputed violation %s belongs to driver %s, but settlement belongs to driver %s",
+                        violation.getId(), violation.getDriver().getId(), settlement.getDriver().getId()
+                ));
+            }
+
+            // Validate inclusion in this settlement
+            if (!settlementRepository.isViolationIncludedInSettlement(settlement.getId(), violation.getId())) {
+                throw new SettlementDomainException(String.format(
+                        "Disputed violation %s was not included in settlement %s",
+                        violation.getId(), settlement.getId()
+                ));
+            }
 
             Optional<Dispute> existingDispute = disputeRepository
                     .findBySettlementIdAndViolationIdAndStatus(settlement.getId(), violation.getId(), DisputeStatus.OPEN);

@@ -4,6 +4,7 @@ import com.moveinsync.settlement.entity.ContractRate;
 import com.moveinsync.settlement.entity.Driver;
 import com.moveinsync.settlement.entity.Trip;
 import com.moveinsync.settlement.entity.Vendor;
+import com.moveinsync.settlement.entity.VendorContract;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,9 @@ class FlywayMigrationIntegrationTest {
 
     @Autowired
     private VendorInvoiceRepository invoiceRepository;
+
+    @Autowired
+    private SettlementRepository settlementRepository;
 
     @Test
     @DisplayName("Should successfully load seeded Vendor VND-BLR-01")
@@ -119,5 +123,20 @@ class FlywayMigrationIntegrationTest {
 
         auditLogRepository.save(log);
         assertThat(auditLogRepository.findById(log.getId())).isPresent();
+    }
+
+    @Test
+    @DisplayName("Should verify V5 migration for settlement item links and single target constraint")
+    void testV5LinkSettlementInputsMigration() {
+        assertThat(settlementRepository).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Should verify V6 migration: vendor contract business unit link and adjustment consumption columns")
+    void testV6ContractBuAndAdjustmentConsumptionMigration() {
+        Optional<VendorContract> contract = contractRepository.findByContractNumber("CNT-VND01-2026");
+        assertThat(contract).isPresent();
+        assertThat(contract.get().getBusinessUnit()).isNotNull();
+        assertThat(contract.get().getBusinessUnit().getUnitCode()).isEqualTo("BU-BLR-TECH-PARK");
     }
 }

@@ -24,6 +24,10 @@ public class VendorContract {
     @JoinColumn(name = "vendor_id", nullable = false)
     private Vendor vendor;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "business_unit_id", nullable = false)
+    private BusinessUnit businessUnit;
+
     @Column(name = "contract_number", nullable = false, unique = true, length = 100)
     private String contractNumber;
 

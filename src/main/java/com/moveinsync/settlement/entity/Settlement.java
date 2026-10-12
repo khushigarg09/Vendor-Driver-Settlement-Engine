@@ -70,9 +70,35 @@ public class Settlement {
     @OneToMany(mappedBy = "settlement", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SettlementLine> lines = new ArrayList<>();
 
+    @Builder.Default
+    @ManyToMany
+    @JoinTable(
+        name = "settlement_trip_items",
+        joinColumns = @JoinColumn(name = "settlement_id"),
+        inverseJoinColumns = @JoinColumn(name = "trip_id")
+    )
+    private java.util.Set<Trip> trips = new java.util.HashSet<>();
+
+    @Builder.Default
+    @ManyToMany
+    @JoinTable(
+        name = "settlement_violation_items",
+        joinColumns = @JoinColumn(name = "settlement_id"),
+        inverseJoinColumns = @JoinColumn(name = "violation_id")
+    )
+    private java.util.Set<Violation> violations = new java.util.HashSet<>();
+
     public void addLine(SettlementLine line) {
         lines.add(line);
         line.setSettlement(this);
+    }
+
+    public void addTrip(Trip trip) {
+        trips.add(trip);
+    }
+
+    public void addViolation(Violation violation) {
+        violations.add(violation);
     }
 
     @PrePersist

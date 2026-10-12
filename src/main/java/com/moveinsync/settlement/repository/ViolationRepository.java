@@ -31,4 +31,19 @@ public interface ViolationRepository extends JpaRepository<Violation, UUID> {
             @Param("startDate") Instant startDate,
             @Param("endDate") Instant endDate
     );
+
+    @Query("""
+        SELECT v FROM Violation v
+        WHERE v.driver.id IN :driverIds
+          AND v.status = :status
+          AND v.occurredAt >= :startDate
+          AND v.occurredAt < :endDate
+        ORDER BY v.occurredAt ASC
+    """)
+    List<Violation> findPendingViolationsForDriversInWindow(
+            @Param("driverIds") List<UUID> driverIds,
+            @Param("status") ViolationStatus status,
+            @Param("startDate") Instant startDate,
+            @Param("endDate") Instant endDate
+    );
 }

@@ -2,6 +2,7 @@ package com.moveinsync.settlement.service;
 
 import com.moveinsync.settlement.dto.SettlementRunRequest;
 import com.moveinsync.settlement.dto.SettlementRunResponse;
+import com.moveinsync.settlement.entity.*;
 import com.moveinsync.settlement.repository.SettlementRunRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -54,16 +57,33 @@ class SettlementRunConcurrencyIntegrationTest {
         tripRepository.findAll().stream()
                 .filter(t -> t.getSourceTripId() != null && t.getSourceTripId().startsWith("CONC-TRIP-"))
                 .forEach(tripRepository::delete);
+        driverRepository.findAll().stream()
+                .filter(d -> d.getDriverCode() != null && d.getDriverCode().startsWith("DRV-CONC-"))
+                .forEach(driverRepository::delete);
     }
 
     @Test
     @DisplayName("Concurrent threads executing the same settlement run scope produce exactly 1 database record")
     void testConcurrentSettlementRuns() throws InterruptedException, ExecutionException {
+        Driver concDriver = driverRepository.save(Driver.builder()
+                .id(UUID.randomUUID())
+                .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
+                .driverCode("DRV-CONC-" + UUID.randomUUID().toString().substring(0, 8))
+                .firstName("Conc")
+                .lastName("Driver")
+                .phoneNumber("+919999900000")
+                .panNumber("ABCDE1234F")
+                .bankAccountNumber("1234567890")
+                .ifscCode("HDFC0001234")
+                .status("ACTIVE")
+                .createdAt(java.time.Instant.now())
+                .build());
+
         // Seed 1 eligible trip in 2029-11 for this isolated test
         tripRepository.save(com.moveinsync.settlement.entity.Trip.builder()
                 .id(UUID.randomUUID())
                 .sourceTripId("CONC-TRIP-" + UUID.randomUUID())
-                .driver(driverRepository.findById(UUID.fromString("44444444-4444-4444-4444-444444444441")).orElseThrow())
+                .driver(concDriver)
                 .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
                 .businessUnit(businessUnitRepository.findById(BU_ID).orElseThrow())
                 .vehicleCategory("SEDAN")
@@ -123,5 +143,27 @@ class SettlementRunConcurrencyIntegrationTest {
                 .count();
 
         assertThat(runsInDb).isEqualTo(1);
+    }
+
+    @Autowired
+    private SettlementRunClaimService settlementRunClaimService;
+
+    @Test
+    @DisplayName("Durable Claim: markRunFailed transitions an in-progress STARTED run to FAILED")
+    void testClaimServiceMarkRunFailed() {
+        Vendor vendor = vendorRepository.findById(VENDOR_ID).orElseThrow();
+        BusinessUnit bu = businessUnitRepository.findById(BU_ID).orElseThrow();
+        String failedPeriod = "2029-12";
+
+        com.moveinsync.settlement.entity.SettlementRun run = settlementRunClaimService.claimRun(vendor, bu, failedPeriod, "TEST_FAIL");
+        assertThat(run.getStatus()).isEqualTo(com.moveinsync.settlement.entity.enums.SettlementRunStatus.STARTED);
+
+        settlementRunClaimService.markRunFailed(run.getId());
+
+        com.moveinsync.settlement.entity.SettlementRun reloaded = settlementRunRepository.findById(run.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(com.moveinsync.settlement.entity.enums.SettlementRunStatus.FAILED);
+
+        // cleanup
+        settlementRunRepository.delete(reloaded);
     }
 }

@@ -112,6 +112,13 @@ class DisputeAdjustmentServiceIntegrationTest {
                     .status(SettlementStatus.APPROVED)
                     .createdAt(Instant.now())
                     .build());
+
+            Trip t1 = tripRepository.findById(TRIP_1_ID).orElseThrow();
+            s1.addTrip(t1);
+            Violation v1 = violationRepository.findById(VIOLATION_ID).orElseThrow();
+            s1.addViolation(v1);
+
+            s1 = settlementRepository.save(s1);
             approvedSettlementId = s1.getId();
 
             SettlementRun run2 = settlementRunRepository.save(SettlementRun.builder()
@@ -319,5 +326,115 @@ class DisputeAdjustmentServiceIntegrationTest {
         List<AdjustmentResponse> adjustments = disputeAdjustmentService.listAdjustments(approvedSettlement.getId());
         assertThat(adjustments).isNotEmpty();
         assertThat(adjustments).allMatch(a -> a.getSettlementId().equals(approvedSettlement.getId()));
+    }
+
+    @Test
+    @Order(9)
+    @DisplayName("Dispute Validation: Cannot file dispute against an unapproved/calculated settlement")
+    void testCannotFileDisputeOnUnapprovedSettlement() {
+        DisputeRequest req = DisputeRequest.builder()
+                .settlementId(draftSettlement.getId())
+                .disputedTripId(TRIP_1_ID)
+                .reason("Challenging draft settlement")
+                .claimedDelta(new BigDecimal("50.00"))
+                .build();
+
+        assertThatThrownBy(() -> disputeAdjustmentService.fileDispute(req, "DRIVER"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("Settlement must be in APPROVED or PAID status");
+    }
+
+    @Test
+    @Order(10)
+    @DisplayName("Dispute Validation: Cannot file dispute without any target (neither trip nor violation)")
+    void testCannotProvideNeitherTripNorViolation() {
+        DisputeRequest req = DisputeRequest.builder()
+                .settlementId(approvedSettlement.getId())
+                .reason("No target supplied")
+                .claimedDelta(new BigDecimal("50.00"))
+                .build();
+
+        assertThatThrownBy(() -> disputeAdjustmentService.fileDispute(req, "DRIVER"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("Dispute must target either a specific trip or a violation");
+    }
+
+    @Test
+    @Order(11)
+    @DisplayName("Dispute Validation: Cannot provide both trip and violation targets simultaneously")
+    void testCannotProvideBothTripAndViolation() {
+        DisputeRequest req = DisputeRequest.builder()
+                .settlementId(approvedSettlement.getId())
+                .disputedTripId(TRIP_1_ID)
+                .disputedViolationId(VIOLATION_ID)
+                .reason("Both targets supplied")
+                .claimedDelta(new BigDecimal("50.00"))
+                .build();
+
+        assertThatThrownBy(() -> disputeAdjustmentService.fileDispute(req, "DRIVER"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("Specify exactly one target");
+    }
+
+    @Test
+    @Order(12)
+    @DisplayName("Dispute Ownership: Cannot dispute a trip belonging to another driver")
+    void testCannotDisputeCrossDriverTrip() {
+        Trip driver2Trip = tripRepository.save(Trip.builder()
+                .id(UUID.randomUUID())
+                .sourceTripId("TRIP-DRV2-" + UUID.randomUUID())
+                .driver(driverRepository.findById(DRIVER_2_ID).orElseThrow())
+                .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
+                .businessUnit(businessUnitRepository.findById(BU_ID).orElseThrow())
+                .vehicleCategory("SEDAN")
+                .startedAt(Instant.now())
+                .completedAt(Instant.now())
+                .status(com.moveinsync.settlement.entity.enums.TripStatus.COMPLETED)
+                .settlementStatus(com.moveinsync.settlement.entity.enums.TripSettlementStatus.PENDING)
+                .createdAt(Instant.now())
+                .build());
+
+        DisputeRequest req = DisputeRequest.builder()
+                .settlementId(approvedSettlement.getId()) // approvedSettlement belongs to driver1
+                .disputedTripId(driver2Trip.getId())
+                .reason("Attempting cross-driver dispute")
+                .claimedDelta(new BigDecimal("50.00"))
+                .build();
+
+        assertThatThrownBy(() -> disputeAdjustmentService.fileDispute(req, "DRIVER"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("belongs to driver");
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("Dispute Ownership: Cannot dispute a trip not included in the target settlement")
+    void testCannotDisputeUnincludedTrip() {
+        // Create an unincluded trip for driver1 in another month
+        Trip unincludedTrip = tripRepository.save(Trip.builder()
+                .id(UUID.randomUUID())
+                .sourceTripId("TRIP-UNINCLUDED-" + UUID.randomUUID())
+                .driver(driverRepository.findById(DRIVER_1_ID).orElseThrow())
+                .vendor(vendorRepository.findById(VENDOR_ID).orElseThrow())
+                .businessUnit(businessUnitRepository.findById(BU_ID).orElseThrow())
+                .vehicleCategory("SEDAN")
+                .startedAt(Instant.parse("2026-08-10T08:00:00Z"))
+                .completedAt(Instant.parse("2026-08-10T09:00:00Z"))
+                .status(TripStatus.COMPLETED)
+                .settlementStatus(TripSettlementStatus.PENDING)
+                .delayMinutes(0)
+                .createdAt(Instant.now())
+                .build());
+
+        DisputeRequest req = DisputeRequest.builder()
+                .settlementId(approvedSettlement.getId())
+                .disputedTripId(unincludedTrip.getId())
+                .reason("Attempting unincluded trip dispute")
+                .claimedDelta(new BigDecimal("50.00"))
+                .build();
+
+        assertThatThrownBy(() -> disputeAdjustmentService.fileDispute(req, "DRIVER"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("was not included in settlement");
     }
 }

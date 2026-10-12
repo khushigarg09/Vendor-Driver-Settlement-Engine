@@ -148,10 +148,24 @@ public class ReconciliationServiceImpl implements ReconciliationService {
             ));
         }
 
+        if (!run.getBusinessUnit().getId().equals(invoice.getBusinessUnit().getId())) {
+            throw new SettlementDomainException(String.format(
+                    "Reconciliation business unit mismatch: Run BU=%s, Invoice BU=%s",
+                    run.getBusinessUnit().getId(), invoice.getBusinessUnit().getId()
+            ));
+        }
+
         if (!run.getBillingPeriod().equals(invoice.getBillingPeriod())) {
             throw new SettlementDomainException(String.format(
                     "Reconciliation billing period mismatch: Run period=%s, Invoice period=%s",
                     run.getBillingPeriod(), invoice.getBillingPeriod()
+            ));
+        }
+
+        if (run.getStatus() != com.moveinsync.settlement.entity.enums.SettlementRunStatus.FINALIZED) {
+            throw new SettlementDomainException(String.format(
+                    "Cannot reconcile invoice against unapproved settlement run %s with status %s. Run must be in FINALIZED status.",
+                    run.getId(), run.getStatus()
             ));
         }
 

@@ -38,9 +38,11 @@ public class SettlementRunServiceImpl implements SettlementRunService {
     private final ContractRateRepository contractRateRepository;
     private final TripRepository tripRepository;
     private final ViolationRepository violationRepository;
+    private final AdjustmentRepository adjustmentRepository;
     private final SettlementCalculationEngine calculationEngine;
     private final AuditService auditService;
     private final SettlementMetricsService metricsService;
+    private final SettlementRunClaimService claimService;
 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -62,7 +64,10 @@ public class SettlementRunServiceImpl implements SettlementRunService {
                         existingRun.getId(), existingRun.getStatus());
                 return mapToResponse(existingRun, true);
             } else if (existingRun.getStatus() == SettlementRunStatus.STARTED) {
-                throw new ConflictException("Settlement run for this scope is already in progress.");
+                if (existingRun.getCreatedAt().isAfter(Instant.now().minusSeconds(900))) {
+                    throw new ConflictException("Settlement run for this scope is already in progress.");
+                }
+                log.warn("Found abandoned stale claim {} (> 15 mins old), allowing claim recovery", existingRun.getId());
             }
         }
 
@@ -73,10 +78,20 @@ public class SettlementRunServiceImpl implements SettlementRunService {
         BusinessUnit businessUnit = businessUnitRepository.findById(request.getBusinessUnitId())
                 .orElseThrow(() -> new ResourceNotFoundException("Business Unit not found: " + request.getBusinessUnitId()));
 
-        // 3. Retrieve Active Vendor Contract
-        List<VendorContract> contracts = vendorContractRepository.findByVendorIdAndStatus(vendor.getId(), "ACTIVE");
+        // 3. Retrieve Active Vendor Contract scoped to Vendor and Business Unit
+        List<VendorContract> contracts = vendorContractRepository
+                .findByVendorIdAndBusinessUnitIdAndStatus(vendor.getId(), businessUnit.getId(), "ACTIVE");
         if (contracts.isEmpty()) {
-            throw new ResourceNotFoundException("No active contract found for vendor: " + vendor.getVendorCode());
+            throw new ResourceNotFoundException(String.format(
+                    "No active contract found for vendor %s at business unit %s",
+                    vendor.getVendorCode(), businessUnit.getUnitCode()
+            ));
+        }
+        if (contracts.size() > 1) {
+            throw new SettlementDomainException(String.format(
+                    "Ambiguous active contracts: %d active contracts found for vendor %s at business unit %s. Expected exactly 1.",
+                    contracts.size(), vendor.getVendorCode(), businessUnit.getUnitCode()
+            ));
         }
         VendorContract contract = contracts.getFirst();
 
@@ -120,166 +135,244 @@ public class SettlementRunServiceImpl implements SettlementRunService {
         Map<Driver, List<Trip>> tripsByDriver = eligibleTrips.stream()
                 .collect(Collectors.groupingBy(Trip::getDriver));
 
-        // 8. Create SettlementRun Entity with Status STARTED
-        SettlementRun settlementRun = SettlementRun.builder()
-                .id(UUID.randomUUID())
-                .vendor(vendor)
-                .businessUnit(businessUnit)
-                .billingPeriod(request.getBillingPeriod())
-                .runNumber(1)
-                .status(SettlementRunStatus.STARTED)
-                .createdBy(createdBy != null ? createdBy : "SYSTEM")
-                .createdAt(Instant.now())
-                .build();
+        // 8. Atomically claim SettlementRun in separate transaction (status = STARTED)
+        SettlementRun claimedRun;
+        try {
+            claimedRun = claimService.claimRun(vendor, businessUnit, request.getBillingPeriod(), createdBy);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("Concurrent claim collision for vendor={}, bu={}, period={}. Re-checking status.",
+                    request.getVendorId(), request.getBusinessUnitId(), request.getBillingPeriod());
+            SettlementRun existing = settlementRunRepository
+                    .findByVendorIdAndBusinessUnitIdAndBillingPeriod(request.getVendorId(), request.getBusinessUnitId(), request.getBillingPeriod())
+                    .orElseThrow(() -> new ConflictException("Settlement run claim collision occurred."));
+            if (existing.getStatus() == SettlementRunStatus.CALCULATED || existing.getStatus() == SettlementRunStatus.FINALIZED) {
+                return mapToResponse(existing, true);
+            } else if (existing.getStatus() == SettlementRunStatus.FAILED) {
+                throw new ConflictException("Settlement run previously failed. Please retry.");
+            }
+            throw new ConflictException("Settlement run for this scope is already in progress.");
+        }
 
-        List<Settlement> settlements = new ArrayList<>();
-        Money runTotalGross = Money.ZERO;
-        Money runTotalIncentives = Money.ZERO;
-        Money runTotalPenalties = Money.ZERO;
-        Money runTotalTds = Money.ZERO;
-        Money runTotalNet = Money.ZERO;
+        try {
+            List<Settlement> settlements = new ArrayList<>();
+            List<Adjustment> consumedAdjustments = new ArrayList<>();
+            Money runTotalGross = Money.ZERO;
+            Money runTotalIncentives = Money.ZERO;
+            Money runTotalPenalties = Money.ZERO;
+            Money runTotalTds = Money.ZERO;
+            Money runTotalNet = Money.ZERO;
 
-        // 9. Process Each Driver Settlement
-        for (Map.Entry<Driver, List<Trip>> entry : tripsByDriver.entrySet()) {
-            Driver driver = entry.getKey();
-            List<Trip> driverTrips = entry.getValue();
-
-            // Map trips to domain calculation records
-            List<TripRecord> tripRecords = driverTrips.stream()
-                    .map(t -> new TripRecord(
-                            t.getId(),
-                            t.getSourceTripId(),
-                            driver.getId(),
-                            t.getVehicleCategory(),
-                            t.getStartedAt(),
-                            t.getCompletedAt(),
-                            t.getDelayMinutes() != null ? t.getDelayMinutes() : 0,
-                            t.getStatus()
-                    ))
-                    .toList();
-
-            // Query pending violations for this driver
-            List<Violation> violations = violationRepository.findPendingViolationsForDriverInWindow(
-                    driver.getId(),
+            // Batch query pending violations for all eligible drivers in one round-trip (O(1) query)
+            List<UUID> driverIds = tripsByDriver.keySet().stream().map(Driver::getId).toList();
+            List<Violation> allPendingViolations = violationRepository.findPendingViolationsForDriversInWindow(
+                    driverIds,
                     ViolationStatus.PENDING,
                     periodStart,
                     periodEnd
             );
+            Map<UUID, List<Violation>> violationsByDriver = allPendingViolations.stream()
+                    .collect(Collectors.groupingBy(v -> v.getDriver().getId()));
 
-            List<ViolationRecord> violationRecords = violations.stream()
-                    .map(v -> new ViolationRecord(
-                            v.getId(),
-                            v.getSourceViolationId(),
-                            driver.getId(),
-                            v.getViolationType(),
-                            v.getOccurredAt(),
-                            Money.of(v.getPenaltyAmount())
-                    ))
-                    .toList();
+            // 9. Process Each Driver Settlement
+            for (Map.Entry<Driver, List<Trip>> entry : tripsByDriver.entrySet()) {
+                Driver driver = entry.getKey();
+                List<Trip> driverTrips = entry.getValue();
 
-            // Execute Pure Domain Financial Calculation
-            DriverSettlementCalculationResult calcResult = calculationEngine.computeDriverSettlement(
-                    driver.getId(),
-                    request.getBillingPeriod(),
-                    tripRecords,
-                    rateRecords,
-                    violationRecords,
-                    contract.getBillingType(),
-                    IncentiveConfig.defaultConfig(),
-                    PenaltyConfig.defaultConfig(),
-                    TdsConfig.defaultConfig(),
-                    Money.ZERO, // No previous withholding in primary run
-                    false,      // attendance flag
-                    zoneId
-            );
+                // Map trips to domain calculation records
+                List<TripRecord> tripRecords = driverTrips.stream()
+                        .map(t -> new TripRecord(
+                                t.getId(),
+                                t.getSourceTripId(),
+                                driver.getId(),
+                                t.getVehicleCategory(),
+                                t.getStartedAt(),
+                                t.getCompletedAt(),
+                                t.getDelayMinutes() != null ? t.getDelayMinutes() : 0,
+                                t.getStatus()
+                        ))
+                        .toList();
 
-            // Construct Settlement Entity
-            Settlement settlement = Settlement.builder()
-                    .id(UUID.randomUUID())
-                    .settlementRun(settlementRun)
-                    .driver(driver)
-                    .billingPeriod(request.getBillingPeriod())
-                    .tripsCount(calcResult.tripsCount())
-                    .grossBasePay(calcResult.grossBasePay().getAmount())
-                    .incentivesTotal(calcResult.incentivesTotal().getAmount())
-                    .penaltiesTotal(calcResult.penaltiesTotal().getAmount())
-                    .tdsTaxTotal(calcResult.tdsTaxTotal().getAmount())
-                    .netPayout(calcResult.netPayout().getAmount())
-                    .status(SettlementStatus.CALCULATED)
-                    .createdAt(Instant.now())
-                    .build();
+                // Retrieve pre-fetched violations for this driver
+                List<Violation> violations = violationsByDriver.getOrDefault(driver.getId(), Collections.emptyList());
 
-            // Construct Signed Ledger Lines
-            for (SignedLineItem lineItem : calcResult.lineItems()) {
-                SettlementLine line = SettlementLine.builder()
+                List<ViolationRecord> violationRecords = violations.stream()
+                        .map(v -> new ViolationRecord(
+                                v.getId(),
+                                v.getSourceViolationId(),
+                                driver.getId(),
+                                v.getViolationType(),
+                                v.getOccurredAt(),
+                                Money.of(v.getPenaltyAmount())
+                        ))
+                        .toList();
+
+                // Calculate cumulative TDS previously withheld across earlier batches this month (FR-05)
+                BigDecimal priorTdsWithheld = settlementRepository.findPreviousTdsWithheldForDriver(
+                        driver.getId(), request.getBillingPeriod()
+                );
+                Money priorTds = Money.of(priorTdsWithheld != null ? priorTdsWithheld : BigDecimal.ZERO);
+
+                // Dynamically evaluate perfect attendance from operational duty days and zero driver-fault cancellations
+                Set<java.time.LocalDate> dutyDays = driverTrips.stream()
+                        .filter(t -> t.getStatus() == TripStatus.COMPLETED)
+                        .map(t -> t.getCompletedAt().atZone(zoneId).toLocalDate())
+                        .collect(Collectors.toSet());
+                boolean hasCancellations = driverTrips.stream()
+                        .anyMatch(t -> t.getStatus() == TripStatus.CANCELLED_BY_DRIVER);
+                boolean perfectAttendance = dutyDays.size() >= IncentiveConfig.defaultConfig().tier1WorkedDaysThreshold() && !hasCancellations;
+
+                // Execute Pure Domain Financial Calculation
+                DriverSettlementCalculationResult calcResult = calculationEngine.computeDriverSettlement(
+                        driver.getId(),
+                        request.getBillingPeriod(),
+                        tripRecords,
+                        rateRecords,
+                        violationRecords,
+                        contract.getBillingType(),
+                        IncentiveConfig.defaultConfig(),
+                        PenaltyConfig.defaultConfig(),
+                        TdsConfig.defaultConfig(),
+                        priorTds,
+                        perfectAttendance,
+                        zoneId
+                );
+
+                // Construct Settlement Entity
+                Settlement settlement = Settlement.builder()
                         .id(UUID.randomUUID())
-                        .settlement(settlement)
-                        .lineType(lineItem.lineType())
-                        .signedAmount(lineItem.signedAmount().getAmount())
-                        .description(lineItem.description())
-                        .sourceReferenceId(lineItem.sourceReferenceId())
+                        .settlementRun(claimedRun)
+                        .driver(driver)
+                        .billingPeriod(request.getBillingPeriod())
+                        .tripsCount(calcResult.tripsCount())
+                        .grossBasePay(calcResult.grossBasePay().getAmount())
+                        .incentivesTotal(calcResult.incentivesTotal().getAmount())
+                        .penaltiesTotal(calcResult.penaltiesTotal().getAmount())
+                        .tdsTaxTotal(calcResult.tdsTaxTotal().getAmount())
+                        .netPayout(calcResult.netPayout().getAmount())
+                        .status(SettlementStatus.CALCULATED)
                         .createdAt(Instant.now())
                         .build();
-                settlement.addLine(line);
+
+                // Construct Signed Ledger Lines
+                for (SignedLineItem lineItem : calcResult.lineItems()) {
+                    SettlementLine line = SettlementLine.builder()
+                            .id(UUID.randomUUID())
+                            .settlement(settlement)
+                            .lineType(lineItem.lineType())
+                            .signedAmount(lineItem.signedAmount().getAmount())
+                            .description(lineItem.description())
+                            .sourceReferenceId(lineItem.sourceReferenceId())
+                            .createdAt(Instant.now())
+                            .build();
+                    settlement.addLine(line);
+                }
+
+                // Explicitly link contributing trips and violations for dispute ownership tracking
+                settlement.getTrips().addAll(driverTrips);
+                settlement.getViolations().addAll(violations);
+
+                // Query and consume eligible approved, unconsumed dispute adjustments into this payout cycle (FR-08)
+                List<Adjustment> pendingAdjustments = adjustmentRepository
+                        .findPendingAdjustmentsForDriver(driver.getId(), AdjustmentStatus.APPROVED);
+
+                for (Adjustment adj : pendingAdjustments) {
+                    SettlementLine adjLine = SettlementLine.builder()
+                            .id(UUID.randomUUID())
+                            .settlement(settlement)
+                            .lineType(SettlementLineType.ADJUSTMENT)
+                            .signedAmount(adj.getDeltaAmount())
+                            .description(String.format("Approved dispute delta (%s)", adj.getAdjustmentType()))
+                            .sourceReferenceId(adj.getId().toString())
+                            .createdAt(Instant.now())
+                            .build();
+                    settlement.addLine(adjLine);
+
+                    // Add adjustment delta to driver net payout
+                    settlement.setNetPayout(settlement.getNetPayout().add(adj.getDeltaAmount()));
+
+                    // Link adjustment to consuming run and settlement
+                    adj.setStatus(AdjustmentStatus.DISBURSED);
+                    adj.setConsumedRun(claimedRun);
+                    adj.setConsumedSettlement(settlement);
+                    consumedAdjustments.add(adj);
+
+                    // Accumulate to run net total
+                    runTotalNet = runTotalNet.add(Money.of(adj.getDeltaAmount()));
+                }
+
+                settlements.add(settlement);
+
+                // Update status of processed trips and violations
+                for (Trip trip : driverTrips) {
+                    trip.setSettlementStatus(TripSettlementStatus.SETTLED);
+                }
+                for (Violation violation : violations) {
+                    violation.setStatus(ViolationStatus.DEDUCTED);
+                }
+
+                // Accumulate Run Totals
+                runTotalGross = runTotalGross.add(calcResult.grossBasePay());
+                runTotalIncentives = runTotalIncentives.add(calcResult.incentivesTotal());
+                runTotalPenalties = runTotalPenalties.add(calcResult.penaltiesTotal());
+                runTotalTds = runTotalTds.add(calcResult.tdsTaxTotal());
+                runTotalNet = runTotalNet.add(calcResult.netPayout());
             }
 
-            settlements.add(settlement);
+            // 10. Finalize SettlementRun Entity
+            claimedRun.setStatus(SettlementRunStatus.CALCULATED);
+            claimedRun.setTotalGross(runTotalGross.getAmount());
+            claimedRun.setTotalIncentives(runTotalIncentives.getAmount());
+            claimedRun.setTotalPenalties(runTotalPenalties.getAmount());
+            claimedRun.setTotalTds(runTotalTds.getAmount());
+            claimedRun.setTotalNetPayout(runTotalNet.getAmount());
+            claimedRun.setSettlements(settlements);
 
-            // Update status of processed trips and violations
-            for (Trip trip : driverTrips) {
-                trip.setSettlementStatus(TripSettlementStatus.SETTLED);
-            }
-            for (Violation violation : violations) {
-                violation.setStatus(ViolationStatus.DEDUCTED);
+            // 11. Persist Run, Settlements, Lines, and Consumed Adjustments atomically
+            SettlementRun savedRun = settlementRunRepository.save(claimedRun);
+            tripRepository.saveAll(eligibleTrips);
+            if (!consumedAdjustments.isEmpty()) {
+                Map<UUID, Settlement> managedSettlementsByDriver = savedRun.getSettlements().stream()
+                        .collect(Collectors.toMap(s -> s.getDriver().getId(), s -> s));
+                for (Adjustment adj : consumedAdjustments) {
+                    adj.setConsumedRun(savedRun);
+                    if (adj.getConsumedSettlement() != null) {
+                        adj.setConsumedSettlement(managedSettlementsByDriver.get(adj.getConsumedSettlement().getDriver().getId()));
+                    }
+                }
+                adjustmentRepository.saveAll(consumedAdjustments);
             }
 
-            // Accumulate Run Totals
-            runTotalGross = runTotalGross.add(calcResult.grossBasePay());
-            runTotalIncentives = runTotalIncentives.add(calcResult.incentivesTotal());
-            runTotalPenalties = runTotalPenalties.add(calcResult.penaltiesTotal());
-            runTotalTds = runTotalTds.add(calcResult.tdsTaxTotal());
-            runTotalNet = runTotalNet.add(calcResult.netPayout());
+            log.info("Settlement run {} completed successfully: {} drivers settled, net payout = ₹{}",
+                    savedRun.getId(), settlements.size(), savedRun.getTotalNetPayout());
+
+            auditService.recordEvent(
+                    "SETTLEMENT_RUN_INITIATED",
+                    "SETTLEMENT_RUN",
+                    savedRun.getId().toString(),
+                    createdBy,
+                    "ROLE_ADMIN",
+                    Map.of(
+                            "vendorId", savedRun.getVendor().getId().toString(),
+                            "businessUnitId", savedRun.getBusinessUnit().getId().toString(),
+                            "billingPeriod", savedRun.getBillingPeriod(),
+                            "totalNetPayout", savedRun.getTotalNetPayout(),
+                            "driversSettled", settlements.size()
+                    )
+            );
+
+            long duration = System.currentTimeMillis() - startTime;
+            metricsService.recordSettlementRun(
+                    savedRun.getStatus().name(),
+                    duration,
+                    savedRun.getTotalNetPayout() != null ? savedRun.getTotalNetPayout().doubleValue() : 0.0
+            );
+
+            return mapToResponse(savedRun, false);
+        } catch (Exception ex) {
+            log.error("Settlement run {} execution failed: {}", claimedRun.getId(), ex.getMessage(), ex);
+            claimService.markRunFailed(claimedRun.getId());
+            throw ex;
         }
-
-        // 10. Finalize SettlementRun Entity
-        settlementRun.setStatus(SettlementRunStatus.CALCULATED);
-        settlementRun.setTotalGross(runTotalGross.getAmount());
-        settlementRun.setTotalIncentives(runTotalIncentives.getAmount());
-        settlementRun.setTotalPenalties(runTotalPenalties.getAmount());
-        settlementRun.setTotalTds(runTotalTds.getAmount());
-        settlementRun.setTotalNetPayout(runTotalNet.getAmount());
-        settlementRun.setSettlements(settlements);
-
-        // 11. Persist Run, Settlements, and Lines atomically
-        SettlementRun savedRun = settlementRunRepository.save(settlementRun);
-        tripRepository.saveAll(eligibleTrips);
-
-        log.info("Settlement run {} completed successfully: {} drivers settled, net payout = ₹{}",
-                savedRun.getId(), settlements.size(), savedRun.getTotalNetPayout());
-
-        auditService.recordEvent(
-                "SETTLEMENT_RUN_INITIATED",
-                "SETTLEMENT_RUN",
-                savedRun.getId().toString(),
-                createdBy,
-                "ROLE_ADMIN",
-                Map.of(
-                        "vendorId", savedRun.getVendor().getId().toString(),
-                        "businessUnitId", savedRun.getBusinessUnit().getId().toString(),
-                        "billingPeriod", savedRun.getBillingPeriod(),
-                        "totalNetPayout", savedRun.getTotalNetPayout(),
-                        "driversSettled", settlements.size()
-                )
-        );
-
-        long duration = System.currentTimeMillis() - startTime;
-        metricsService.recordSettlementRun(
-                savedRun.getStatus().name(),
-                duration,
-                savedRun.getTotalNetPayout() != null ? savedRun.getTotalNetPayout().doubleValue() : 0.0
-        );
-
-        return mapToResponse(savedRun, false);
     }
 
     @Override

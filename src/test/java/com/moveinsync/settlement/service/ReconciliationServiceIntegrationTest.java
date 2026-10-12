@@ -74,7 +74,7 @@ class ReconciliationServiceIntegrationTest {
                 .vendor(v != null ? v : vendor)
                 .businessUnit(businessUnit)
                 .billingPeriod(period)
-                .status(SettlementRunStatus.CALCULATED)
+                .status(SettlementRunStatus.FINALIZED)
                 .totalGross(netPayout)
                 .totalIncentives(BigDecimal.ZERO)
                 .totalPenalties(BigDecimal.ZERO)
@@ -278,5 +278,73 @@ class ReconciliationServiceIntegrationTest {
         List<VendorInvoiceResponse> filtered = reconciliationService.listInvoices(VENDOR_ID, "2026-01");
         assertThat(filtered).isNotEmpty();
         assertThat(filtered).allMatch(inv -> inv.getBillingPeriod().equals("2026-01"));
+    }
+
+    @Test
+    @Order(9)
+    @DisplayName("Reconciliation Scope Mismatch: Throws exception when run is unapproved/calculated")
+    void testReconcileUnapprovedRunThrowsException() {
+        SettlementRun unapprovedRun = SettlementRun.builder()
+                .id(UUID.randomUUID())
+                .vendor(vendor)
+                .businessUnit(businessUnit)
+                .billingPeriod("2025-08")
+                .status(SettlementRunStatus.CALCULATED)
+                .totalGross(new BigDecimal("10000.00"))
+                .totalNetPayout(new BigDecimal("10000.00"))
+                .createdBy("TEST")
+                .build();
+        settlementRunRepository.save(unapprovedRun);
+
+        VendorInvoiceResponse invoice = reconciliationService.submitInvoice(VendorInvoiceRequest.builder()
+                .vendorId(VENDOR_ID)
+                .businessUnitId(BU_ID)
+                .invoiceNumber("INV-UNAPPROVED-001")
+                .billingPeriod("2025-08")
+                .claimedAmount(new BigDecimal("10000.00"))
+                .invoiceDate(LocalDate.of(2025, 8, 31))
+                .build());
+
+        ReconciliationRequest reconReq = ReconciliationRequest.builder()
+                .settlementRunId(unapprovedRun.getId())
+                .vendorInvoiceId(invoice.getId())
+                .build();
+
+        assertThatThrownBy(() -> reconciliationService.reconcile(reconReq, "ADMIN"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("Run must be in FINALIZED status");
+    }
+
+    @Test
+    @Order(10)
+    @DisplayName("Reconciliation Scope Mismatch: Throws exception when business unit does not match")
+    void testReconcileBusinessUnitMismatchThrowsException() {
+        BusinessUnit otherBu = businessUnitRepository.save(BusinessUnit.builder()
+                .id(UUID.randomUUID())
+                .unitCode("BU-HYD-01")
+                .name("Hyderabad Tech Park")
+                .timezone("Asia/Kolkata")
+                .isActive(true)
+                .build());
+
+        SettlementRun run = createTestRun(new BigDecimal("10000.00"), "2025-09", vendor);
+
+        VendorInvoiceResponse invoice = reconciliationService.submitInvoice(VendorInvoiceRequest.builder()
+                .vendorId(VENDOR_ID)
+                .businessUnitId(otherBu.getId())
+                .invoiceNumber("INV-BU-MISMATCH-001")
+                .billingPeriod("2025-09")
+                .claimedAmount(new BigDecimal("10000.00"))
+                .invoiceDate(LocalDate.of(2025, 9, 30))
+                .build());
+
+        ReconciliationRequest reconReq = ReconciliationRequest.builder()
+                .settlementRunId(run.getId())
+                .vendorInvoiceId(invoice.getId())
+                .build();
+
+        assertThatThrownBy(() -> reconciliationService.reconcile(reconReq, "ADMIN"))
+                .isInstanceOf(SettlementDomainException.class)
+                .hasMessageContaining("Reconciliation business unit mismatch");
     }
 }

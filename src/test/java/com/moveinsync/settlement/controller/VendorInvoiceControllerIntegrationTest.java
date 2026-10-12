@@ -82,7 +82,7 @@ class VendorInvoiceControllerIntegrationTest {
                                 .vendor(vendor)
                                 .businessUnit(bu)
                                 .billingPeriod(BILLING_PERIOD)
-                                .status(SettlementRunStatus.CALCULATED)
+                                .status(SettlementRunStatus.FINALIZED)
                                 .totalGross(new BigDecimal("10000.00"))
                                 .totalIncentives(BigDecimal.ZERO)
                                 .totalPenalties(BigDecimal.ZERO)
@@ -93,6 +93,10 @@ class VendorInvoiceControllerIntegrationTest {
                                 .build();
                         return settlementRunRepository.save(newRun);
                     });
+            if (run.getStatus() != SettlementRunStatus.FINALIZED) {
+                run.setStatus(SettlementRunStatus.FINALIZED);
+                run = settlementRunRepository.save(run);
+            }
             createdRunId = run.getId();
         }
     }

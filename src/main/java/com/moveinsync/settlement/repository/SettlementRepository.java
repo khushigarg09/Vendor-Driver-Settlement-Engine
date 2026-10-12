@@ -27,4 +27,21 @@ public interface SettlementRepository extends JpaRepository<Settlement, UUID> {
     );
 
     List<Settlement> findBySettlementRunId(UUID settlementRunId);
+
+    @Query("SELECT COUNT(t) > 0 FROM Settlement s JOIN s.trips t WHERE s.id = :settlementId AND t.id = :tripId")
+    boolean isTripIncludedInSettlement(@Param("settlementId") UUID settlementId, @Param("tripId") UUID tripId);
+
+    @Query("SELECT COUNT(v) > 0 FROM Settlement s JOIN s.violations v WHERE s.id = :settlementId AND v.id = :violationId")
+    boolean isViolationIncludedInSettlement(@Param("settlementId") UUID settlementId, @Param("violationId") UUID violationId);
+
+    @Query("""
+        SELECT COALESCE(SUM(s.tdsTaxTotal), 0.00) FROM Settlement s
+        WHERE s.driver.id = :driverId
+          AND s.billingPeriod = :billingPeriod
+          AND s.status IN ('APPROVED', 'PAID', 'FINALIZED')
+    """)
+    java.math.BigDecimal findPreviousTdsWithheldForDriver(
+            @Param("driverId") UUID driverId,
+            @Param("billingPeriod") String billingPeriod
+    );
 }

@@ -60,7 +60,7 @@ public class PenaltyCalculationEngine {
 
                 // Add signed credit line for contractual cap waiver
                 lines.add(new SignedLineItem(
-                        SettlementLineType.BASE_PAY, // or adjustment
+                        SettlementLineType.PENALTY_CAP_ADJUSTMENT,
                         capOffset,
                         String.format("Contractual Cap Adjustment: Penalties capped at %s (Waiver %s)",
                                 config.monthlyPenaltyCap(), capOffset),

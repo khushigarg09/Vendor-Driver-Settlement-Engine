@@ -59,6 +59,12 @@ class DisputeControllerIntegrationTest {
     @Autowired
     private DriverRepository driverRepository;
 
+    @Autowired
+    private TripRepository tripRepository;
+
+    @Autowired
+    private ViolationRepository violationRepository;
+
     private static final UUID VENDOR_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID BU_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
     private static final UUID DRIVER_ID = UUID.fromString("44444444-4444-4444-4444-444444444441");
@@ -92,7 +98,7 @@ class DisputeControllerIntegrationTest {
                             .createdAt(Instant.now())
                             .build()));
 
-            Settlement settlement = settlementRepository.save(Settlement.builder()
+            Settlement settlement = Settlement.builder()
                     .id(UUID.randomUUID())
                     .settlementRun(run)
                     .driver(driver)
@@ -105,8 +111,14 @@ class DisputeControllerIntegrationTest {
                     .netPayout(new BigDecimal("3000.00"))
                     .status(SettlementStatus.APPROVED)
                     .createdAt(Instant.now())
-                    .build());
+                    .build();
 
+            Trip trip = tripRepository.findById(TRIP_1_ID).orElseThrow();
+            Violation violation = violationRepository.findById(VIOLATION_ID).orElseThrow();
+            settlement.addTrip(trip);
+            settlement.addViolation(violation);
+
+            settlement = settlementRepository.save(settlement);
             testSettlementId = settlement.getId();
         }
     }

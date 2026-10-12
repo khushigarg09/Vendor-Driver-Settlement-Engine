@@ -68,6 +68,8 @@ class PenaltyCalculationEngineTest {
         assertThat(result.totalPenalties()).isEqualTo(Money.of("5000.00"));
         // 12 penalty lines + 1 cap credit adjustment line (+₹1000)
         assertThat(result.lines()).hasSize(13);
+        assertThat(result.lines().get(12).lineType()).isEqualTo(SettlementLineType.PENALTY_CAP_ADJUSTMENT);
+        assertThat(result.lines().get(12).signedAmount()).isEqualTo(Money.of("1000.00"));
 
         // Net sum of all penalty lines must equal -₹5,000.00
         Money netPenaltyLineSum = Money.ZERO;

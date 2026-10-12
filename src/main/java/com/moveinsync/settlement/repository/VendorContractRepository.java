@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface VendorContractRepository extends JpaRepository<VendorContract, UUID> {
     Optional<VendorContract> findByContractNumber(String contractNumber);
     List<VendorContract> findByVendorIdAndStatus(UUID vendorId, String status);
+    List<VendorContract> findByVendorIdAndBusinessUnitIdAndStatus(UUID vendorId, UUID businessUnitId, String status);
 }
