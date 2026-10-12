@@ -113,7 +113,7 @@ class SchemaConstraintsIntegrationTest {
                 .id(UUID.randomUUID())
                 .vendor(vendor)
                 .businessUnit(bu)
-                .billingPeriod("2025-09")
+                .billingPeriod("2025-05")
                 .status(SettlementRunStatus.STARTED)
                 .createdBy("admin")
                 .build();
@@ -123,7 +123,7 @@ class SchemaConstraintsIntegrationTest {
                 .id(UUID.randomUUID())
                 .settlementRun(run)
                 .driver(driver)
-                .billingPeriod("2025-09")
+                .billingPeriod("2025-05")
                 .grossBasePay(new BigDecimal("1000.00"))
                 .incentivesTotal(BigDecimal.ZERO)
                 .penaltiesTotal(BigDecimal.ZERO)
@@ -137,7 +137,7 @@ class SchemaConstraintsIntegrationTest {
                 .id(UUID.randomUUID())
                 .settlementRun(run)
                 .driver(driver) // Duplicate driver for same run!
-                .billingPeriod("2025-09")
+                .billingPeriod("2025-05")
                 .grossBasePay(new BigDecimal("1000.00"))
                 .incentivesTotal(BigDecimal.ZERO)
                 .penaltiesTotal(BigDecimal.ZERO)
